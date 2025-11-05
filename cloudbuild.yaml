@@ -1,0 +1,78 @@
+steps:
+  # Restore cache (optional, can speed up builds)
+  # - name: 'gcr.io/cloud-builders/gsutil'
+  #   entrypoint: 'bash'
+  #   args:
+  #     - '-c'
+  #     - |
+  #       gsutil cp gs://${_ARTIFACT_BUCKET}/cache/gradle_cache.tar.gz gradle_cache.tar.gz || echo "Cache not found"
+  #       if [ -f gradle_cache.tar.gz ]; then
+  #         tar -xzf gradle_cache.tar.gz
+  #       fi
+  #   id: 'restore-cache'
+
+  # Set up Android SDK (if not using a builder with it pre-installed)
+  # Example using a common Android image:
+  - name: 'gcr.io/cloud-builders/gradle:8.4.0-jdk21' # Choose a Gradle version that matches your project
+    entrypoint: 'bash'
+    args: ['-c', 'sdkmanager --version']
+    id: 'sdk-check'
+
+  # Run linters and tests
+  - name: 'gcr.io/cloud-builders/gradle:8.4.0-jdk21'
+    entrypoint: './gradlew'
+    args: ['lintDebug', 'testDebugUnitTest']
+    id: 'lint-test'
+
+  # Build Debug APK
+  - name: 'gcr.io/cloud-builders/gradle:8.4.0-jdk21'
+    entrypoint: './gradlew'
+    args: ['assembleDebug']
+    id: 'build-debug'
+
+  # Prepare for Release Build - Fetch Keystore from Secret Manager
+  - name: 'gcr.io/cloud-builders/gcloud'
+    entrypoint: 'bash'
+    args:
+      - '-c'
+      - |
+        gcloud secrets versions access latest --secret=android-release-keystore --format='get(payload.data)' | tr '_-' '/+' | base64 -d > /workspace/release.keystore
+    id: 'fetch-keystore'
+    secretEnv: ['ANDROID_RELEASE_KEYSTORE_BASE64'] # Not strictly needed here, but good practice if the secret name was passed
+
+  # Build Debug Bundle (AAB) and APK, including signing
+  - name: 'gcr.io/cloud-builders/gradle:8.4.0-jdk21'
+    entrypoint: './gradlew'
+    args:
+      - 'bundleDebug'
+      - 'assembleDebug'
+    id: 'build-debug'
+
+  # Save cache (optional)
+  # - name: 'gcr.io/cloud-builders/gsutil'
+  #   entrypoint: 'bash'
+  #   args:
+  #     - '-c'
+  #     - |
+  #       tar -czf gradle_cache.tar.gz .gradle
+  #       gsutil cp gradle_cache.tar.gz gs://${_ARTIFACT_BUCKET}/cache/gradle_cache.tar.gz
+  #   id: 'save-cache'
+
+# Artifacts to store in Google Cloud Storage
+artifacts:
+  objects:
+    location: 'gs://${_ARTIFACT_BUCKET}/builds/${BUILD_ID}/'
+    paths:
+      - 'app/build/outputs/apk/debug/app-debug.apk'
+      - 'app/build/outputs/bundle/debug/app-debug.aab'
+
+# Substitutions (variables)
+substitutions:
+  _ARTIFACT_BUCKET: 'my-android-app-artifacts' # !!! Replace with your GCS bucket name
+  _KEY_ALIAS: 'mykeyalias' # !!! Replace with your release key alias
+
+options:
+  logging: CLOUD_LOGGING_ONLY
+  machineType: 'E2_HIGHCPU_8' # Android builds can be resource intensive
+
+timeout: 1800s # 30 minutes
