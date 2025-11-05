@@ -24,23 +24,7 @@ steps:
     args: ['lintDebug', 'testDebugUnitTest']
     id: 'lint-test'
 
-  # Build Debug APK
-  - name: 'gcr.io/cloud-builders/gradle:8.4.0-jdk21'
-    entrypoint: './gradlew'
-    args: ['assembleDebug']
-    id: 'build-debug'
-
-  # Prepare for Release Build - Fetch Keystore from Secret Manager
-  - name: 'gcr.io/cloud-builders/gcloud'
-    entrypoint: 'bash'
-    args:
-      - '-c'
-      - |
-        gcloud secrets versions access latest --secret=android-release-keystore --format='get(payload.data)' | tr '_-' '/+' | base64 -d > /workspace/release.keystore
-    id: 'fetch-keystore'
-    secretEnv: ['ANDROID_RELEASE_KEYSTORE_BASE64'] # Not strictly needed here, but good practice if the secret name was passed
-
-  # Build Debug Bundle (AAB) and APK, including signing
+  # Build Debug Bundle (AAB) and APK,
   - name: 'gcr.io/cloud-builders/gradle:8.4.0-jdk21'
     entrypoint: './gradlew'
     args:
@@ -68,8 +52,7 @@ artifacts:
 
 # Substitutions (variables)
 substitutions:
-  _ARTIFACT_BUCKET: 'my-android-app-artifacts' # !!! Replace with your GCS bucket name
-  _KEY_ALIAS: 'mykeyalias' # !!! Replace with your release key alias
+  _ARTIFACT_BUCKET: 'antenna-pod-artifacts'
 
 options:
   logging: CLOUD_LOGGING_ONLY
