@@ -1,0 +1,61 @@
+steps:
+  # Restore cache (optional, can speed up builds)
+  # - name: 'gcr.io/cloud-builders/gsutil'
+  #   entrypoint: 'bash'
+  #   args:
+  #     - '-c'
+  #     - |
+  #       gsutil cp gs://${_ARTIFACT_BUCKET}/cache/gradle_cache.tar.gz gradle_cache.tar.gz || echo "Cache not found"
+  #       if [ -f gradle_cache.tar.gz ]; then
+  #         tar -xzf gradle_cache.tar.gz
+  #       fi
+  #   id: 'restore-cache'
+
+  # Set up Android SDK (if not using a builder with it pre-installed)
+  # Example using a common Android image:
+  - name: 'gcr.io/cloud-builders/gradle:8.4.0-jdk21' # Choose a Gradle version that matches your project
+    entrypoint: 'bash'
+    args: ['-c', 'sdkmanager --version']
+    id: 'sdk-check'
+
+  # Run linters and tests
+  - name: 'gcr.io/cloud-builders/gradle:8.4.0-jdk21'
+    entrypoint: './gradlew'
+    args: ['lintDebug', 'testDebugUnitTest']
+    id: 'lint-test'
+
+  # Build Debug Bundle (AAB) and APK,
+  - name: 'gcr.io/cloud-builders/gradle:8.4.0-jdk21'
+    entrypoint: './gradlew'
+    args:
+      - 'bundleDebug'
+      - 'assembleDebug'
+    id: 'build-debug'
+
+  # Save cache (optional)
+  # - name: 'gcr.io/cloud-builders/gsutil'
+  #   entrypoint: 'bash'
+  #   args:
+  #     - '-c'
+  #     - |
+  #       tar -czf gradle_cache.tar.gz .gradle
+  #       gsutil cp gradle_cache.tar.gz gs://${_ARTIFACT_BUCKET}/cache/gradle_cache.tar.gz
+  #   id: 'save-cache'
+
+# Artifacts to store in Google Cloud Storage
+artifacts:
+  objects:
+    location: 'gs://${_ARTIFACT_BUCKET}/builds/${BUILD_ID}/'
+    paths:
+      - 'app/build/outputs/apk/debug/app-debug.apk'
+      - 'app/build/outputs/bundle/debug/app-debug.aab'
+
+# Substitutions (variables)
+substitutions:
+  _ARTIFACT_BUCKET: 'antenna-pod-artifacts'
+
+options:
+  logging: CLOUD_LOGGING_ONLY
+  machineType: 'E2_HIGHCPU_8' # Android builds can be resource intensive
+
+timeout: 1800s # 30 minutes
